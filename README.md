@@ -1,1 +1,1 @@
-# smart-medecine
+# smart-medicine

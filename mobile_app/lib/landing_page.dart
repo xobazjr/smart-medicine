@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'user/settings_page.dart';
 import 'user/drugs_page.dart';
-import 'user/stats_page.dart';
+import 'user/history_page.dart';
 import 'user/home_page.dart';
 
 class LandingPage extends StatefulWidget {
@@ -17,7 +17,7 @@ class _LandingPageState extends State<LandingPage> {
   static const List<Widget> _widgetOptions = <Widget>[
     HomePage(),
     DrugsPage(),
-    StatsPage(),
+    HistoryPage(),
     SettingsPage(),
   ];
 

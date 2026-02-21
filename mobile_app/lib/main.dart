@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'user/settings.dart';
-import 'user/drugs.dart';
-import 'user/stats.dart';
-import 'user/homa.dart';
+import 'user/settings_page.dart';
+import 'user/drugs_page.dart';
+import 'user/stats_page.dart';
+import 'user/home_page.dart';
 
 void main() => runApp(const MyApp());
 

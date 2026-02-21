@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 
-class StatsPage extends StatelessWidget {
-  const StatsPage({super.key});
+class HistoryPage extends StatelessWidget {
+  const HistoryPage({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('สถิติ')),
+      appBar: AppBar(title: const Text('ประวัติการใช้ยา')),
       body: Center(
         child: Text(
-          'Stats Page',
+          'History Page',
           style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
         ),
       ),

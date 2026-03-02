@@ -1,17 +1,15 @@
 // base template by gemini
 
-
 import { NextResponse } from 'next/server';
 import sql from '../../../lib/db';
 import bcrypt from 'bcryptjs';
 
 export async function POST(request) {
     try {
-        // 1. Get the data sent from the frontend
         const body = await request.json();
-        const { username, password, tel, role, caretaker_id } = body;
+        // เพิ่มฟิลด์ให้ตรงกับตารางที่คุณมีในรูปภาพ (tel, webhooks)
+        const { username, password, tel, role, caretaker_id, webhook_url_discord, webhook_url_line } = body;
 
-        // 2. Basic validation to make sure we have the required fields
         if (!username || !password) {
             return NextResponse.json(
                 { error: "Username and password are required" },
@@ -19,46 +17,45 @@ export async function POST(request) {
             );
         }
 
-        // 3. Check if the username is already taken
+        // 3. ตรวจสอบ Username ซ้ำ
         const existingUser = await sql`SELECT username FROM users WHERE username = ${username} LIMIT 1`;
-
         if (existingUser.length > 0) {
             return NextResponse.json(
                 { error: "Username is already taken" },
-                { status: 409 } // 409 Conflict is the standard status for duplicates
+                { status: 409 }
             );
         }
 
-        // 4. Hash the password securely
+        // 4. Hash Password
         const saltRounds = 10;
         const password_hash = await bcrypt.hash(password, saltRounds);
 
-        // 5. Insert the new user into the database
-        // We use RETURNING at the end to instantly get the newly created user's data back
+        // 5. Insert ข้อมูล (ลบ user_id ออกเพื่อให้ DB สร้าง UUID ให้เองอัตโนมัติ)
         const newUser = await sql`
             INSERT INTO users (
-                               user_id,
                 username, 
                 password_hash, 
                 tel, 
                 role, 
-                caretaker_id
+                caretaker_id,
+                webhook_url_discord,
+                webhook_url_line
             ) VALUES (
-            NULL,
                 ${username}, 
                 ${password_hash}, 
                 ${tel || null}, 
                 ${role || 'user'}, 
-                ${caretaker_id || null}
+                ${caretaker_id || null},
+                ${webhook_url_discord || null},
+                ${webhook_url_line || null}
             ) 
             RETURNING user_id, username, role, tel;
         `;
 
-        // 6. Return success message and the new user's safe data (no password hash!)
         return NextResponse.json({
             message: "User created successfully!",
             user: newUser[0]
-        }, { status: 201 }); // 201 Created is the standard status for successful inserts
+        }, { status: 201 });
 
     } catch (error) {
         console.error("Signup Error:", error);

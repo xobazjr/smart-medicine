@@ -1,53 +1,68 @@
+// base template by gemini
+
+
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import sql from '../../../lib/db';
 import bcrypt from 'bcryptjs';
-import crypto from 'crypto';
 
 export async function POST(request) {
-  try {
-    const { username, password, tel, role } = await request.json();
+    try {
+        // 1. Get the data sent from the frontend
+        const body = await request.json();
+        const { username, password, tel, role, caretaker_id } = body;
 
-    if (!username || !password) {
-      return NextResponse.json({ error: "Username and password are required" }, { status: 400 });
-    }
-
-    // 1. Hash the password
-    const salt = await bcrypt.genSalt(10);
-    const password_hash = await bcrypt.hash(password, salt);
-
-    // 2. Generate a unique user_id
-    // Since your database column 'user_id' is NOT NULL and not auto-generating, 
-    // we generate a UUID here in the code.
-    const user_id = crypto.randomUUID();
-
-    // 3. Insert into Supabase matching your schema
-    const { data, error } = await supabase
-      .from('users')
-      .insert([
-        { 
-          user_id,
-          username, 
-          password_hash, 
-          tel: tel || null, 
-          role: role || 'patient'
+        // 2. Basic validation to make sure we have the required fields
+        if (!username || !password) {
+            return NextResponse.json(
+                { error: "Username and password are required" },
+                { status: 400 }
+            );
         }
-      ])
-      .select();
 
-    if (error) {
-      throw error;
+        // 3. Check if the username is already taken
+        const existingUser = await sql`SELECT username FROM users WHERE username = ${username} LIMIT 1`;
+
+        if (existingUser.length > 0) {
+            return NextResponse.json(
+                { error: "Username is already taken" },
+                { status: 409 } // 409 Conflict is the standard status for duplicates
+            );
+        }
+
+        // 4. Hash the password securely
+        const saltRounds = 10;
+        const password_hash = await bcrypt.hash(password, saltRounds);
+
+        // 5. Insert the new user into the database
+        // We use RETURNING at the end to instantly get the newly created user's data back
+        const newUser = await sql`
+            INSERT INTO users (
+                username, 
+                password_hash, 
+                tel, 
+                role, 
+                caretaker_id
+            ) VALUES (
+                ${username}, 
+                ${password_hash}, 
+                ${tel || null}, 
+                ${role || 'user'}, 
+                ${caretaker_id || null}
+            ) 
+            RETURNING user_id, username, role, tel;
+        `;
+
+        // 6. Return success message and the new user's safe data (no password hash!)
+        return NextResponse.json({
+            message: "User created successfully!",
+            user: newUser[0]
+        }, { status: 201 }); // 201 Created is the standard status for successful inserts
+
+    } catch (error) {
+        console.error("Signup Error:", error);
+        return NextResponse.json(
+            { error: "Internal server error", details: error.message },
+            { status: 500 }
+        );
     }
-
-    return NextResponse.json({ 
-      message: "User created successfully!", 
-      user: {
-        user_id: data[0].user_id,
-        username: data[0].username,
-        role: data[0].role
-      }
-    });
-  } catch (error) {
-    console.error("Signup Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
 }

@@ -1,3 +1,5 @@
+// base template by gemini
+
 import { NextResponse } from 'next/server';
 import sql from '../../../lib/db'; // Adjust this path depending on where db.js is located
 import bcrypt from 'bcryptjs';

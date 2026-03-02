@@ -37,12 +37,14 @@ export async function POST(request) {
         // We use RETURNING at the end to instantly get the newly created user's data back
         const newUser = await sql`
             INSERT INTO users (
+                               user_id,
                 username, 
                 password_hash, 
                 tel, 
                 role, 
                 caretaker_id
             ) VALUES (
+            NULL,
                 ${username}, 
                 ${password_hash}, 
                 ${tel || null}, 

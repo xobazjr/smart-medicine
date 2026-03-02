@@ -28,6 +28,7 @@ export async function POST(request) {
             );
         }
 
+        
         // 2. Compare the provided password with the stored hash
         const isPasswordValid = await bcrypt.compare(password, user.password_hash);
 

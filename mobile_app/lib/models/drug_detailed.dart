@@ -1,3 +1,5 @@
+// medicine/detail
+
 class DrugDetailed {
   final int drug_id;
   final String drug_name;

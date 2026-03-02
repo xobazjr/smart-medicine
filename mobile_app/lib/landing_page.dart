@@ -111,13 +111,13 @@ class _NavigationExampleState extends State<NavigationExample> {
           NavigationDestination(
             selectedIcon: Icon(Icons.home, color: Colors.white),
             icon: Icon(Icons.home_outlined),
-            label: 'Home',
+            label: 'หน้าหลัก',
           ),
           NavigationDestination(
             selectedIcon: Icon(Icons.medication, color: Colors.white),
             // icon: Badge(child: Icon(Icons.medication_outlined)),
             icon: Icon(Icons.medication_outlined),
-            label: 'Drugs',
+            label: 'ยา',
           ),
           NavigationDestination(
             selectedIcon: Icon(Icons.query_stats_sharp, color: Colors.white),
@@ -126,12 +126,12 @@ class _NavigationExampleState extends State<NavigationExample> {
             //   child: Icon(Icons.query_stats_outlined),
             // ),
             icon: Icon(Icons.query_stats_outlined),
-            label: 'History',
+            label: 'ประวัติ',
           ),
           NavigationDestination(
             selectedIcon: Icon(Icons.settings, color: Colors.white),
             icon: Icon(Icons.settings_outlined),
-            label: 'Settings',
+            label: 'ตั้งค่า',
           ),
         ],
       ),

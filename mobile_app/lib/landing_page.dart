@@ -79,18 +79,18 @@ class LandingPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(home: NavigationExample());
+    return const MaterialApp(home: Navigation());
   }
 }
 
-class NavigationExample extends StatefulWidget {
-  const NavigationExample({super.key});
+class Navigation extends StatefulWidget {
+  const Navigation({super.key});
 
   @override
-  State<NavigationExample> createState() => _NavigationExampleState();
+  State<Navigation> createState() => _NavigationState();
 }
 
-class _NavigationExampleState extends State<NavigationExample> {
+class _NavigationState extends State<Navigation> {
   int currentPageIndex = 0;
   int _selectedIndex = 0;
 

@@ -38,9 +38,9 @@ export async function POST(req) {
             ) VALUES (
                  ${username},
                  ${password_hash},
-                 ${tel || null},
-                      null,
-                      null,
+                 ${tel || 0},
+                      "",
+                      "",
                  'elderly',
                  ${caretaker_id[0].user_id},
                  ${morning_time ?? "8:00:00"},

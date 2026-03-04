@@ -27,9 +27,9 @@ export async function POST(req) {
                 take_morning, take_noon, take_evening, take_bedtime,
                 timing, frequency, user_id
             ) VALUES (
-                ${drug_name}, ${start_date || null}, ${start_time || null},
-                ${total_drugs || 0}, ${each_taken || 0}, ${description || null},
-                ${warning || null}, ${image_url || null}, ${take_morning || 0},
+                ${drug_name}, ${start_date || ""}, ${start_time || ""},
+                ${total_drugs || 0}, ${each_taken || 0}, ${description || ""},
+                ${warning || ""}, ${image_url || ""}, ${take_morning || 0},
                 ${take_noon || 0}, ${take_evening || 0}, ${take_bedtime || 0},
                 ${timing || "after"}, ${frequency || "daily"}, ${user_id[0].user_id}
             ) RETURNING drug_id`

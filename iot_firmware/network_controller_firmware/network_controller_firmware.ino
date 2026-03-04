@@ -18,7 +18,7 @@
 */
 
 // --- Ping live status to server ---
-#define pingInterval 15000 // (30 seconds)
+#define pingInterval 5000 // (5 seconds)
 #define mqttConnectionInterval 5000
 
 // --- EMQX Broker Credentials ---

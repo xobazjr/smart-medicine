@@ -63,12 +63,13 @@
 //     );
 //   }
 // }
-
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'admin/settings_page.dart';
 import 'admin/drugs_page.dart';
 import 'admin/history_page.dart';
 import 'admin/home_page.dart';
+import 'package:http/http.dart' as http;
 
 /// Flutter code sample for [NavigationBar].
 
@@ -92,6 +93,20 @@ class Navigation extends StatefulWidget {
 
 class _NavigationState extends State<Navigation> {
   int _selectedIndex = 0;
+
+  Future<List<dynamic>> fetchDrugs() async {
+    final response = await http.get(
+      Uri.parse(
+        'https://smart-medicine-topaz.vercel.app/api/get_status',
+      ),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Failed to load status');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

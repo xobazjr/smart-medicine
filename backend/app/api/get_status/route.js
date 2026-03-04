@@ -12,7 +12,7 @@ export async function GET(req) {
         const dbTimestamp = query_status[0].timestamp; // Raw timestamp from DB
         const ts = new Date(dbTimestamp);
         const now = new Date();
-        const bkkTime = new Date();
+        const bkkNow = new Date(now.getTime() + (7 * 60 * 60 * 1000));
         const bkkTimeFormatter = new Intl.DateTimeFormat(
             'en-US',
             {
@@ -43,7 +43,7 @@ export async function GET(req) {
         console.log(now);
 
         // --- 2. Raw Time Calculation ---
-        const diffInSeconds = Math.floor((bkkTime - ts) / 1000);
+        const diffInSeconds = Math.floor((bkkNow - ts) / 1000);
 
         let lastSeen = "";
 

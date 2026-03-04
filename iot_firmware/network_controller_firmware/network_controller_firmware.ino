@@ -1,21 +1,7 @@
 // libraries declaration
 #include <ESP8266WiFi.h>
-#include <ESP8266WiFiMulti.h>
 #include <PubSubClient.h>
 #include <time.h>
-
-/*
-  QUICK NOTE: serial.print/serial.println
-  please do so it use 4 char of smth
-  like "CHAR"
-
-  follow by colon and whitespace
-  then anything you want to append into it
-
-  e.g. "CHAR: hello world"
-
-  UPLOAD THIS TO "Generic ESP8266 Module"
-*/
 
 // --- Ping live status to server ---
 #define pingInterval 5000 // (5 seconds)
@@ -31,68 +17,64 @@
 // --- Topics ---
 #define TOPIC_STATUS "medicine_box/status"
 
-ESP8266WiFiMulti wifiMulti;
 WiFiClientSecure espClient;
 PubSubClient client(espClient);
 
-int wifi_interval = 0;
 unsigned long lastPing = 0;
+unsigned long lastMqttAttempt = 0;
+unsigned long lastWifiBlink = 0;   
 
 String serialBuffer = "";
 
 // function to setup wifi connection
 void setup_wifi() {
+  Serial.println("\nWIFI: Hard resetting radio...");
+  
+  // 1. สั่งให้บอร์ด "เลิกจำ" ค่า Wi-Fi เก่าที่พังๆ ใน Flash Memory
+  WiFi.persistent(false); 
+  
+  // 2. ปิดวิทยุ Wi-Fi ทิ้งไปก่อนเลย เพื่อรีเซ็ตฮาร์ดแวร์
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF); 
+  delay(500); // พักหายใจครึ่งวินาที ให้ระบบไฟนิ่ง
+  
+  // 3. เปิดวิทยุขึ้นมาใหม่ในโหมดรับสัญญาณแบบคลีนๆ
+  WiFi.mode(WIFI_STA); 
+  delay(100);
 
-  // scan for all available network (by the list)
-  // --- Wi-Fi Credentials ---
-  Serial.println("WIFI: scanning");
-  wifiMulti.addAP("Phongsiri's A16", "ktbkonno485137@Hotspot");
-  wifiMulti.addAP("XobazJr iPhone 17", "1234567890");
-
-  // loop still scanning
-  while (wifiMulti.run() != WL_CONNECTED) {
-
-    digitalWrite(LED_BUILTIN, LOW);
-    delay(250);
-    digitalWrite(LED_BUILTIN, HIGH);
-    delay(250);
-    
-    wifi_interval++;
-    Serial.print("WIFI: scanning round ");
-    Serial.println(wifi_interval);
-  }
-
-  digitalWrite(LED_BUILTIN, HIGH);
-
-  // successful connection
-  Serial.println("WIFI: connected");
-  Serial.print("WIFI: network is ");
-  Serial.println(WiFi.SSID());
+  Serial.println("WIFI: connecting to Phongsiri's A16");
+  
+  // ลุย! สั่งเชื่อมต่ออีกครั้ง
+  WiFi.begin("Phongsiri's A16", "ktbkonno485137@Hotspot");
 }
 
-// function to reconnect to wifi if lost connection
+// function to reconnect to MQTT
 void reconnect() {
-  while (!client.connected()) {
-    Serial.println("MQTT: lost connection");
+  if (millis() - lastMqttAttempt >= mqttConnectionInterval) {
+    lastMqttAttempt = millis();
 
-    // loop scan again
+    // ถ้าเน็ตหลุดระหว่างต่อ MQTT ให้เด้งออกไปรอเน็ตก่อน
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("WIFI: connection lost during MQTT reconnect!");
+      return; 
+    }
+
+    Serial.println("MQTT: attempting connection...");
+
     String clientId = "esp8266xbjr-";
     clientId += String(random(0xffff), HEX);
 
-    // check connect status
     if (client.connect(clientId.c_str(), BROKER_USER, BROKER_PASSWORD)) {
       Serial.println("MQTT: connected");
     } else {
       Serial.print("MQTT: failed, error=");
       Serial.print(client.state());
-      Serial.println(", trying in 5 seconds");
-      delay(mqttConnectionInterval); 
+      Serial.println(", trying again in 5 seconds");
     }
   }
 }
 
 // function to send something to arduino board via serial
-// must send as CMD:
 void sendToArduino(String cmd, String action, String value) {
   Serial.println(cmd + ":" + action + ":" + value);
 }
@@ -100,23 +82,18 @@ void sendToArduino(String cmd, String action, String value) {
 // function to receive something from arduino board via serial
 void processIncomingSerial() {
   while (Serial.available()) {
-
-    // read stuff from serial
     char inChar = (char)Serial.read();
 
-    if (inChar == '\n') { // end serial printing
+    if (inChar == '\n') { 
       serialBuffer.trim();
 
-      // look for reply from arduino
       if (serialBuffer.startsWith("RPLY:")) {
         int actionSplit = serialBuffer.indexOf(':', 5);
 
-        // if after split is not empty
         if (actionSplit != -1) {
           String action = serialBuffer.substring(5, actionSplit);
           String value = serialBuffer.substring(actionSplit + 1);
 
-          // if it's publish to MQTT then do it so
           if (action == "MQTT_PUB") {
             client.publish("medicine_box/send", value.c_str());
           }
@@ -130,61 +107,62 @@ void processIncomingSerial() {
 }
 
 void setup() {
-
-  // using built-in led to debug wifi
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
 
-  // this is where ESP8266 and Arduino Uno will talks
   Serial.begin(115200);
+  
+  // *** THE TLS MEMORY FIX ***
+  espClient.setBufferSizes(1024, 1024); 
+  
   setup_wifi();
 
-  // setup ntp server time sync
   Serial.println("TIME: syncing");
   configTime(25200, 0, "pool.ntp.org", "time.nist.gov");
 
-  // connect to broker
   espClient.setInsecure();
   client.setServer(BROKER_DOMAIN, BROKER_PORT);
 }
 
 void loop() {
-  
-  // check wifi
+  // 1. รับค่า Serial เสมอ ไม่ว่าจะมีเน็ตหรือไม่
+  processIncomingSerial();
+
+  // Serial.println(WiFi.status());
+  // 2. เช็คสถานะ Wi-Fi
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WIFI: waiting");
-
-    digitalWrite(LED_BUILTIN, LOW);
-    delay(500);
-    digitalWrite(LED_BUILTIN, HIGH);
-    delay(500);
-
-    wifiMulti.run();
-    return;
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastWifiBlink >= 500) { 
+      lastWifiBlink = currentMillis;
+      digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); 
+      Serial.println("WIFI: waiting for network...");
+    }
+    return; // ออกจาก loop ไปรอรอบหน้า
   }
 
-  // broker check
+  // ปิดไฟเมื่อต่อเน็ตติด
+  digitalWrite(LED_BUILTIN, HIGH); 
+
+  // 3. เช็คสถานะ MQTT
   if (!client.connected()) {
     reconnect();
+  } else {
+    client.loop();
   }
 
-  client.loop();
-
-  // ping to server that i'm still online na ja
+  // 4. ส่ง Ping status
   unsigned long currentMillis = millis();
-  if (currentMillis - lastPing >= pingInterval) {
+  if (client.connected() && (currentMillis - lastPing >= pingInterval)) {
     lastPing = currentMillis;
 
-    // construct time payload
     time_t now = time(nullptr);
     struct tm* timeinfo = localtime(&now);
 
     String payload = "{\"msg\": \"I'm alive\"";
 
-    if (timeinfo -> tm_year > 70) {
+    if (timeinfo->tm_year > 70) {
       char timeString[25];
       strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S", timeinfo);
-
       payload += ", \"time\": \"";
       payload += timeString;
       payload += "\"";
@@ -194,13 +172,8 @@ void loop() {
 
     payload += "}";
 
-    // send payload to mqtt server
     Serial.print("MQTT: sending ");
     Serial.println(payload);
-
     client.publish(TOPIC_STATUS, payload.c_str());
   }
-
-  // listen to stuff from arduino board
-  processIncomingSerial();
 }

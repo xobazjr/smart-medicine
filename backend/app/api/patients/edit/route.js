@@ -37,7 +37,7 @@ export async function POST(req) {
                              noon_time = ${noon_time ?? oldPatient[0].noon_time},
                              evening_time = ${evening_time ?? oldPatient[0].evening_time},
                              bedtime_time = ${bedtime_time ?? oldPatient[0].bedtime_time}
-            WHERE user_id = ${user_id}
+            WHERE user_id = ${id}
         `;
 
         return NextResponse.json(finalQuery);

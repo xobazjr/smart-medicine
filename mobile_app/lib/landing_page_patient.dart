@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'admin/settings_page.dart';
-import 'admin/drugs_page.dart';
-import 'admin/history_page.dart';
-import 'admin/home_page.dart';
+import 'patient/settings_page.dart';
+import 'patient/drugs_page.dart';
+import 'patient/history_page.dart';
+import 'patient/home_page.dart';
 
 class LandingPagePatient extends StatefulWidget {
   const LandingPagePatient({super.key});

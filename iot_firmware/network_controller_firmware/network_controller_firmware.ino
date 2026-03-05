@@ -8,8 +8,8 @@
 #define mqttConnectionInterval 5000
 
 // --- Wi-Fi Connection Credentials ---
-#define WIFI_SSID "Phongsiri's A16"
-#define WIFI_PASSWORD "ktbkonno485137@Hotspot"
+#define WIFI_SSID "winsanmwtv"
+#define WIFI_PASSWORD "ktbkonno485137"
 
 // --- EMQX Broker Credentials ---
 #define BROKER_DOMAIN "l2901b8a.ala.asia-southeast1.emqxsl.com"
@@ -27,6 +27,7 @@ PubSubClient client(espClient);
 unsigned long lastPing = 0;
 unsigned long lastMqttAttempt = 0;
 unsigned long lastWifiBlink = 0;   
+unsigned long lastForceWifi = 0; // ย้ายมาประกาศข้างนอกให้จัดการง่ายขึ้น
 
 String serialBuffer = "";
 
@@ -37,11 +38,10 @@ void setup_wifi() {
   WiFi.persistent(false); 
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF); 
-  delay(500); 
+  delay(1000); // เพิ่มเวลาพักให้ชิปเคลียร์แรม 1 วิเต็มๆ
   
   WiFi.mode(WIFI_STA); 
   
-  // *** THE FIX: ปิดโหมดประหยัดพลังงาน + เปิด Auto Reconnect ***
   WiFi.setSleepMode(WIFI_NONE_SLEEP);
   WiFi.setAutoReconnect(true);
   delay(100);
@@ -50,6 +50,7 @@ void setup_wifi() {
   Serial.println(WIFI_SSID);
   
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  lastForceWifi = millis(); // รีเซ็ตตัวจับเวลา
 }
 
 // function to reconnect to MQTT
@@ -132,34 +133,37 @@ void loop() {
   // 1. รับค่า Serial เสมอ ไม่ว่าจะมีเน็ตหรือไม่
   processIncomingSerial();
 
-  // 2. เช็คสถานะ Wi-Fi พร้อมระบบ Force Reconnect
+  // 2. เช็คสถานะ Wi-Fi พร้อมระบบ Force Reconnect แบบใจเย็นขึ้น
   if (WiFi.status() != WL_CONNECTED) {
     unsigned long currentMillis = millis();
     
-    // ไฟกระพริบและปริ้นท์สถานะทุกๆ 1 วินาที
+    // ไฟกระพริบสลับไปมาทุกๆ 1 วินาที (แก้บั๊กไฟค้างให้แล้ว)
     if (currentMillis - lastWifiBlink >= 1000) { 
       lastWifiBlink = currentMillis;
-      digitalWrite(LED_BUILTIN, LOW); 
+      digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); 
       
       Serial.print("WIFI: waiting... Error Code: ");
       Serial.println(WiFi.status()); 
     }
 
-    // *** ลอจิกบังคับเชื่อมต่อใหม่ ***
-    static unsigned long lastForceWifi = 0; 
-    
-    // เปลี่ยนจาก 60000 เป็น 10000 (10 วินาที) และใช้คำสั่ง reconnect() แบบนุ่มนวล
-    if (currentMillis - lastForceWifi >= 10000) {
+    // ขยายเวลารอเป็น 20 วินาทีเต็มๆ
+    if (currentMillis - lastForceWifi >= 60000) {
       lastForceWifi = currentMillis;
-      Serial.println("WIFI: Timeout! Forcing reconnect...");
+      Serial.println("WIFI: Timeout (1m)! Hard reconnecting...");
       
-      WiFi.reconnect(); 
+      // ดึงปลั๊กออกแล้วเสียบใหม่ (ดิบแต่ชัวร์กว่า)
+      WiFi.disconnect();
+      delay(100);
+      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     }
 
     return; // ออกจาก loop ไปรอรอบหน้า
   }
 
-  // ปิดไฟเมื่อต่อเน็ตติด
+  // เคลียร์ค่าตัวจับเวลาเมื่อต่อติดแล้ว ป้องกันการโดนเตะมั่วซั่วในอนาคต
+  lastForceWifi = millis();
+  
+  // ปิดไฟเมื่อต่อเน็ตติด (สถานะปกติ)
   digitalWrite(LED_BUILTIN, HIGH); 
 
   // 3. เช็คสถานะ MQTT

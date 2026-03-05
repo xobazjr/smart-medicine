@@ -15,7 +15,7 @@ export async function GET(req) {
             );
         }
 
-        const patient_name = searchParams.get('piname') ?? '';
+        const patient_name = searchParams.get('pid') ?? '';
         const befaft_meals = searchParams.get('meal') ?? '';
         const time_flags = searchParams.get('time') ?? '';
 
@@ -30,7 +30,7 @@ export async function GET(req) {
 
         if (patient_name !== '') {
             // Added a check to ensure the searched patient actually belongs to this caretaker
-            find_patient_from_caretaker = await sql`SELECT u.user_id FROM users u WHERE u.username = ${patient_name} AND u.caretaker_id = ${find_caretaker[0].user_id}`;
+            find_patient_from_caretaker = await sql`SELECT u.user_id FROM users u WHERE u.user_id = ${pid} AND u.caretaker_id = ${find_caretaker[0].user_id}`;
         }
 
         for (let i = 0; i < find_patient_from_caretaker.length; i++) {

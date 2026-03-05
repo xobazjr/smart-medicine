@@ -34,22 +34,21 @@ String serialBuffer = "";
 void setup_wifi() {
   Serial.println("\nWIFI: Hard resetting radio...");
   
-  // 1. สั่งให้บอร์ด "เลิกจำ" ค่า Wi-Fi เก่าที่พังๆ ใน Flash Memory
   WiFi.persistent(false); 
-  
-  // 2. ปิดวิทยุ Wi-Fi ทิ้งไปก่อนเลย เพื่อรีเซ็ตฮาร์ดแวร์
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF); 
-  delay(500); // พักหายใจครึ่งวินาที ให้ระบบไฟนิ่ง
+  delay(500); 
   
-  // 3. เปิดวิทยุขึ้นมาใหม่ในโหมดรับสัญญาณแบบคลีนๆ
   WiFi.mode(WIFI_STA); 
+  
+  // *** THE FIX: ปิดโหมดประหยัดพลังงาน + เปิด Auto Reconnect ***
+  WiFi.setSleepMode(WIFI_NONE_SLEEP);
+  WiFi.setAutoReconnect(true);
   delay(100);
 
   Serial.print("WIFI: connecting to ");
-  Serial.println(WIFI_SSID)
+  Serial.println(WIFI_SSID);
   
-  // ลุย! สั่งเชื่อมต่ออีกครั้ง
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 }
 
@@ -140,7 +139,7 @@ void loop() {
     // ไฟกระพริบและปริ้นท์สถานะทุกๆ 1 วินาที
     if (currentMillis - lastWifiBlink >= 1000) { 
       lastWifiBlink = currentMillis;
-      digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); 
+      digitalWrite(LED_BUILTIN, LOW); 
       
       Serial.print("WIFI: waiting... Error Code: ");
       Serial.println(WiFi.status()); 
@@ -149,13 +148,12 @@ void loop() {
     // *** ลอจิกบังคับเชื่อมต่อใหม่ ***
     static unsigned long lastForceWifi = 0; 
     
-    // ถ้าเน็ตหลุดเกิน 10 วินาที สั่งตัดและเริ่มต่อใหม่ทันที!
+    // เปลี่ยนจาก 60000 เป็น 10000 (10 วินาที) และใช้คำสั่ง reconnect() แบบนุ่มนวล
     if (currentMillis - lastForceWifi >= 10000) {
       lastForceWifi = currentMillis;
       Serial.println("WIFI: Timeout! Forcing reconnect...");
       
-      WiFi.disconnect();
-      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+      WiFi.reconnect(); 
     }
 
     return; // ออกจาก loop ไปรอรอบหน้า

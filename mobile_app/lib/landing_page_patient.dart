@@ -15,11 +15,11 @@ class LandingPagePatient extends StatefulWidget {
 class _LandingPagePatientState extends State<LandingPagePatient> {
   int _selectedIndex = 0;
 
-  static const List<Widget> _widgetOptions = <Widget>[
-    HomePage(),
-    DrugsPage(),
-    HistoryPage(),
-    SettingsPage(),
+  List<Widget> get _widgetOptions => [
+    HomePage(user: widget.user),
+    DrugsPage(user: widget.user),
+    HistoryPage(user: widget.user),
+    SettingsPage(user: widget.user),
   ];
 
   void _onItemTapped(int index) {
@@ -32,34 +32,33 @@ class _LandingPagePatientState extends State<LandingPagePatient> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(child: _widgetOptions.elementAt(_selectedIndex)),
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.shifting,
-        backgroundColor: const Color(0xFF095086),
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedIndex,
+        // backgroundColor: const Color(0xFF095086),
+        indicatorColor: const Color(0xFF9BD2F2),
+        onDestinationSelected: _onItemTapped,
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home, color: Colors.white),
             label: 'หน้าหลัก',
-            backgroundColor: Color(0xFF095086),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.medication),
+          NavigationDestination(
+            icon: Icon(Icons.medication_outlined),
+            selectedIcon: Icon(Icons.medication, color: Colors.white),
             label: 'ยา',
-            backgroundColor: Color(0xFF095086),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.query_stats_sharp),
+          NavigationDestination(
+            icon: Icon(Icons.query_stats_outlined),
+            selectedIcon: Icon(Icons.query_stats_sharp, color: Colors.white),
             label: 'สถิติ',
-            backgroundColor: Color(0xFF095086),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings, color: Colors.white),
             label: 'ตั้งค่า',
-            backgroundColor: Color(0xFF095086),
           ),
         ],
-        currentIndex: _selectedIndex,
-        selectedItemColor: const Color(0xFF9BD2F2),
-        onTap: _onItemTapped,
       ),
     );
   }

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 class DrugsPage extends StatelessWidget {
-  const DrugsPage({super.key});
+  final Map<String, dynamic> user;
+  const DrugsPage({super.key, required this.user});
 
   @override
   Widget build(BuildContext context) {

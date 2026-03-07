@@ -4,7 +4,7 @@ import mqtt from 'mqtt';
 
 export async function POST(req) {
     try {
-        // 1. Verify the token to keep your API secure
+
         const authHeader = req.headers.get('authorization');
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             return NextResponse.json(
@@ -23,36 +23,33 @@ export async function POST(req) {
             );
         }
 
-        // 2. Extract only the alarms array from the frontend payload
         const body = await req.json();
         const { alarms } = body;
 
-        // 3. Send Alarms directly to the hardware with pacing
-        await new Promise((resolve, reject) => {
+        await new Promise((resolve) => {
+
             const client = mqtt.connect('mqtts://l2901b8a.ala.asia-southeast1.emqxsl.com:8883', {
                 username: 'mqtt_to_nextjs',
                 password: 'mqtt_to_nextjs',
                 clientId: `nextjs_${Math.random().toString(16).slice(3)}`
             });
 
-            // Note the "async" keyword added here to allow delays!
             client.on('connect', async () => {
-                console.log("MQTT Connected! Bypassing DB and sending to hardware...");
 
-                // Step A: Send the clear command to wipe the Arduino's EEPROM
+                console.log("MQTT Connected! Sending alarms slowly...");
+
+                // CLEAR OLD ALARMS
                 client.publish('medicine/clear_alarm', 'clear');
 
-                // INCREASED DELAY: Wait 2000ms (2 seconds) to give the Arduino
-                // more than enough time to finish wiping safely.
-                await new Promise(r => setTimeout(r, 2000));
+                // wait longer so EEPROM wipe completes
+                await new Promise(r => setTimeout(r, 3000));
 
-                // Step B: Set new alarms one by one with a delay
                 if (alarms && Array.isArray(alarms)) {
-                    // Limit to 7 to match MAX_ALARMS on the ESP8266
+
                     const alarmsToSet = alarms.slice(0, 7);
 
-                    // Using a for...of loop so we can pause execution between sends
                     for (const alarm of alarmsToSet) {
+
                         if (!alarm.time) continue;
 
                         const [h, m] = alarm.time.split(':').map(Number);
@@ -64,16 +61,18 @@ export async function POST(req) {
                             m: m
                         });
 
-                        // Shoot the payload to the ESP8266
+                        console.log("Sending:", payload);
+
                         client.publish('medicine/set_alarm', payload);
 
-                        // INCREASED DELAY: Pause for 1500ms (1.5 seconds) before looping.
-                        // This absolutely guarantees the Serial buffer won't overflow!
-                        await new Promise(r => setTimeout(r, 1500));
+                        // small buffer flush delay
+                        await new Promise(r => setTimeout(r, 300));
+
+                        // MAIN delay so Arduino can process
+                        await new Promise(r => setTimeout(r, 3000));
                     }
                 }
 
-                // All done! Close the connection safely and resolve the promise.
                 client.end();
                 resolve(true);
             });
@@ -83,18 +82,22 @@ export async function POST(req) {
                 client.end();
                 resolve(false);
             });
+
         });
 
         return NextResponse.json(
             { message: "Success! Alarms synced perfectly to the medicine box." },
             { status: 200 }
         );
-    }
-    catch (e) {
+
+    } catch (e) {
+
         console.error(e);
+
         return NextResponse.json(
             { error: e.message },
             { status: 500 }
         );
+
     }
 }

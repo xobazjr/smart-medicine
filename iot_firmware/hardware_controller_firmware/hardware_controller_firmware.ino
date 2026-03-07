@@ -165,7 +165,7 @@ void handleCmd(const char* c){
   }
   else if(strncmp(c,"CMD:REFILL",10)==0){
     servo.write(SERVO_OPEN);
-    delay(5000);
+    delay(60000);
     servo.write(SERVO_CLOSE);
   }
   else if(strncmp(c,"CMD:TARE",8)==0){

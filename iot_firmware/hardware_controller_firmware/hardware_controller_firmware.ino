@@ -1,79 +1,345 @@
-#include <Arduino.h>
 #include <Servo.h>
 #include <HX711.h>
 #include <U8g2lib.h>
 #include <Wire.h>
 #include <RTClib.h>
+#include <EEPROM.h>
 
 #define PIN_SERVO 9
 #define PIN_BUZZER 4
-#define PIN_SCK 3
 #define PIN_DT 2
-#define LID_OPEN 120
-#define LID_CLOSE 0
+#define PIN_SCK 3
+
+#define SERVO_OPEN 110
+#define SERVO_CLOSE 10
+
+#define MAX_ALARMS 7
+#define NAME_LEN 12
+
+#define EEPROM_MAGIC 0x84
+#define ADDR_MAGIC 0
+#define ADDR_COUNT 1
+#define ADDR_ALARMS 10
 
 Servo servo;
 HX711 scale;
 RTC_DS3231 rtc;
+U8G2_SH1106_128X64_NONAME_1_HW_I2C display(U8G2_R0);
 
-// เปลี่ยนเป็น _1_ เพื่อประหยัด RAM มหาศาล
-U8G2_SH1106_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
+struct Alarm{
+  char name[NAME_LEN];
+  byte h;
+  byte m;
+  bool triggered;
+};
 
-void printCenter(const char* text, int y) {
-  int textWidth = u8g2.getUTF8Width(text);
-  int x = (128 - textWidth) / 2;
-  u8g2.setCursor(x, y);
-  u8g2.print(text);
+Alarm alarms[MAX_ALARMS];
+byte alarmCount=0;
+
+char cmdBuf[120];
+byte cmdPos=0;
+
+bool isDispensing=false;
+bool pillTaken=false;
+
+unsigned long dispStart=0;
+unsigned long lastWeightRead=0;
+
+float initWeight=0;
+float curWeight=0;
+
+int activeIdx=-1;
+int lastDay=-1;
+
+char wifiStat[10]="WIFI:--";
+char mqttStat[10]="MQTT:--";
+
+void safeStrCopy(char* d,const char* s,int n){
+  strncpy(d,s,n-1);
+  d[n-1]='\0';
 }
 
-void init_system() {
-  Serial.begin(115200);
-  u8g2.begin();
-  u8g2.enableUTF8Print();
+bool rtcValid(DateTime t){
+  if(t.hour()>23) return false;
+  if(t.minute()>59) return false;
+  return true;
+}
 
-  Serial.println(F("Step 1: OLED OK"));
-  u8g2.firstPage();
-  do {
-    u8g2.setFont(u8g2_font_etl16thai_t);
-    printCenter("Booting...", 40);
-  } while (u8g2.nextPage());
+void saveAlarms(){
+  EEPROM.update(ADDR_MAGIC,EEPROM_MAGIC);
+  EEPROM.update(ADDR_COUNT,alarmCount);
 
-  if (!rtc.begin()) {
-    Serial.println(F("Step 2: RTC Fail!"));
-    while (1);
+  for(int i=0;i<MAX_ALARMS;i++){
+    int addr=ADDR_ALARMS+i*sizeof(Alarm);
+    EEPROM.put(addr,alarms[i]);
+  }
+}
+
+void loadAlarms(){
+  if(EEPROM.read(ADDR_MAGIC)!=EEPROM_MAGIC){
+    alarmCount=0;
+    saveAlarms();
+    return;
   }
 
-  rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-  pinMode(PIN_BUZZER, OUTPUT);
-  tone(PIN_BUZZER, 400, 40);
+  alarmCount=EEPROM.read(ADDR_COUNT);
 
-  scale.begin(PIN_DT, PIN_SCK);
-  // scale.set_scale(-7050); // ถ้าแรมยังไม่พอ ให้ลองเอาค่าใส่ตรงๆ
-  // scale.tare(); // ถ้าค้างที่ Booting ให้ลองปิดบรรทัดนี้
+  if(alarmCount>MAX_ALARMS)
+    alarmCount=0;
+
+  for(int i=0;i<MAX_ALARMS;i++){
+    int addr=ADDR_ALARMS+i*sizeof(Alarm);
+    EEPROM.get(addr,alarms[i]);
+  }
+}
+
+void sendTakenStatus(float diff,DateTime now){
+  char payload[120];
+
+  sprintf(payload,
+  "{\"weight\":\"%d\",\"time\":\"%04d-%02d-%02d %02d:%02d:%02d\"}",
+  (int)diff,
+  now.year(),
+  now.month(),
+  now.day(),
+  now.hour(),
+  now.minute(),
+  now.second());
+
+  Serial.print("PUB:");
+  Serial.println(payload);
+}
+
+void getNextAlarm(DateTime now,char* out){
+  int cur=now.hour()*60+now.minute();
+  int best=9999;
+  int nh=-1,nm=-1;
+
+  for(int i=0;i<alarmCount;i++){
+    if(alarms[i].triggered) continue;
+
+    int a=alarms[i].h*60+alarms[i].m;
+    int diff=a-cur;
+
+    if(diff<0) diff+=1440;
+
+    if(diff<best){
+      best=diff;
+      nh=alarms[i].h;
+      nm=alarms[i].m;
+    }
+  }
+
+  if(nh<0){
+    strcpy(out,"--:--");
+    return;
+  }
+
+  sprintf(out,"%02d:%02d",nh,nm);
+}
+
+void handleCmd(const char* c){
+  if(strncmp(c,"CMD:ADD_MED:",12)==0){
+    char name[NAME_LEN] = "Med";
+    int h = 0, m = 0;
+
+    sscanf(c+12,"{\"name\":\"%11[^\"]\",\"h\":%d,\"m\":%d}",name,&h,&m);
+
+    if(h > 23 || h < 0) h = 0;
+    if(m > 59 || m < 0) m = 0;
+
+    if(alarmCount>=MAX_ALARMS) return;
+
+    safeStrCopy(alarms[alarmCount].name,name,NAME_LEN);
+
+    alarms[alarmCount].h=h;
+    alarms[alarmCount].m=m;
+    alarms[alarmCount].triggered=false;
+
+    alarmCount++;
+    saveAlarms();
+  }
+  else if(strncmp(c,"CMD:CLEAR_MED",13)==0){
+    alarmCount=0;
+    saveAlarms();
+  }
+  else if(strncmp(c,"CMD:REFILL",10)==0){
+    servo.write(SERVO_OPEN);
+    delay(5000);
+    servo.write(SERVO_CLOSE);
+  }
+  else if(strncmp(c,"CMD:TARE",8)==0){
+    if(scale.is_ready())
+      scale.tare();
+  }
+  else if(strncmp(c,"CMD:WIFI:",9)==0)
+    safeStrCopy(wifiStat,c+4,sizeof(wifiStat));
+  else if(strncmp(c,"CMD:MQTT:",9)==0)
+    safeStrCopy(mqttStat,c+4,sizeof(mqttStat));
+}
+
+void setup(){
+  Serial.begin(115200);
+  Wire.begin();
+  
+  // Prevent I2C bus from hanging if OLED or RTC gets disconnected
+  #if defined(__AVR__)
+    Wire.setWireTimeout(3000, true); 
+  #endif
+
+  display.begin();
 
   servo.attach(PIN_SERVO);
-  servo.write(LID_CLOSE);
+  servo.write(SERVO_CLOSE);
+
+  pinMode(PIN_BUZZER,OUTPUT);
+
+  scale.begin(PIN_DT,PIN_SCK);
+  scale.set_scale(872);
+
+  if(scale.is_ready())
+    scale.tare();
+
+  rtc.begin();
+
+  DateTime now=rtc.now();
+
+  if(!rtcValid(now))
+    rtc.adjust(DateTime(F(__DATE__),F(__TIME__)));
+
+  loadAlarms();
 }
 
-void clock_display() {
-  DateTime now = rtc.now();
-  char time_str[10];
-  sprintf(time_str, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
+void loop(){
+  while(Serial.available()){
+    char c=Serial.read();
 
-  u8g2.firstPage();
-  do {
-    u8g2.setFont(u8g2_font_logisoso20_tn);
-    printCenter(time_str, 42);
-    u8g2.setFont(u8g2_font_etl14thai_t);
-    printCenter("เวลาปัจจุบัน", 15);
-  } while (u8g2.nextPage());
-}
+    if(c=='\n' || c=='\r'){
+      if(cmdPos>0){
+        cmdBuf[cmdPos]='\0';
+        handleCmd(cmdBuf);
+        cmdPos=0;
+      }
+    }
+    else{
+      if(cmdPos<119)
+        cmdBuf[cmdPos++]=c;
+    }
+  }
 
-void setup() {
-  init_system();
-}
+  DateTime now=rtc.now();
 
-void loop() {
-  clock_display();
-  delay(1000);
+  if(millis()-lastWeightRead>1000){
+    if(scale.is_ready())
+      curWeight=scale.get_units(3);
+
+    lastWeightRead=millis();
+  }
+
+  if(lastDay!=now.day()){
+    for(int i=0;i<alarmCount;i++)
+      alarms[i].triggered=false;
+
+    lastDay=now.day();
+  }
+
+  for(int i=0;i<alarmCount;i++){
+    if(!alarms[i].triggered &&
+       now.hour()==alarms[i].h &&
+       now.minute()==alarms[i].m &&
+       !isDispensing){
+
+      // CRITICAL FIX: Only read weight if scale is connected to prevent freezing
+      initWeight = 0;
+      if(scale.is_ready()){
+        initWeight=scale.get_units(3); 
+      }
+
+      isDispensing=true;
+      pillTaken=false;
+
+      dispStart=millis();
+      activeIdx=i;
+
+      servo.write(SERVO_OPEN);
+      alarms[i].triggered=true;
+    }
+  }
+
+  if(isDispensing){
+    unsigned long el=millis()-dispStart;
+
+    // CRITICAL FIX: Reliable beep timing (modulo can be skipped if loop is slow)
+    static unsigned long lastBeep = 0;
+    if(millis() - lastBeep >= 1000){
+      tone(PIN_BUZZER, 1200, 200);
+      lastBeep = millis();
+    }
+
+    if(!pillTaken){
+      if(scale.is_ready()){
+        float nowW=scale.get_units(1);
+
+        if(nowW < initWeight){
+          float weightDropped = initWeight - nowW;
+          
+          if(weightDropped > 2){
+            pillTaken=true;
+
+            float diff=nowW-initWeight;
+            sendTakenStatus(diff,now);
+          }
+        }
+      }
+    }
+
+    if(el>180000){
+      servo.write(SERVO_CLOSE);
+      noTone(PIN_BUZZER);
+      isDispensing=false;
+    }
+  }
+
+  display.firstPage();
+
+  do{
+    display.setFont(u8g2_font_6x10_tr);
+
+    display.setCursor(0,10);
+    display.print(wifiStat);
+
+    display.setCursor(70,10);
+    display.print(mqttStat);
+
+    display.drawLine(0,14,128,14);
+
+    display.setCursor(0,32);
+
+    if(isDispensing){
+      if(pillTaken)
+        display.print("Taken");
+      else
+        display.print("Take pill");
+
+    }else{
+      char next[10];
+      getNextAlarm(now,next);
+
+      display.print("NEXT ");
+      display.print(next);
+    }
+
+    display.setCursor(0,60);
+    
+    char t[10];
+    sprintf(t,"%02d:%02d",now.hour(),now.minute());
+    display.print(t);
+
+    display.setCursor(65, 60);
+    display.print("Meds: ");
+    display.print(alarmCount);
+    display.print("/");
+    display.print(MAX_ALARMS);
+
+  }while(display.nextPage());
 }

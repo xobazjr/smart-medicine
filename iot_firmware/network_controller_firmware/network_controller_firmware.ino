@@ -1,202 +1,229 @@
-// libraries declaration
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include <time.h>
 
-// --- Ping live status to server ---
-#define pingInterval 5000 // (5 seconds)
-#define mqttConnectionInterval 5000
-
-// --- Wi-Fi Connection Credentials ---
 #define WIFI_SSID "winsanmwtv"
 #define WIFI_PASSWORD "ktbkonno485137"
 
-// --- EMQX Broker Credentials ---
 #define BROKER_DOMAIN "l2901b8a.ala.asia-southeast1.emqxsl.com"
 #define BROKER_PORT 8883
 #define BROKER_USER "esp8266_xbjr"
 #define BROKER_PASSWORD "esp8266_xbjr"
-#define BROKER_TOKEN "tk_8vX2mP9qL4wK1zN7"
-
-// --- Topics ---
-#define TOPIC_STATUS "medicine_box/status"
 
 WiFiClientSecure espClient;
 PubSubClient client(espClient);
 
-unsigned long lastPing = 0;
-unsigned long lastMqttAttempt = 0;
-unsigned long lastWifiBlink = 0;   
-unsigned long lastForceWifi = 0; // ย้ายมาประกาศข้างนอกให้จัดการง่ายขึ้น
+String serialBuf = "";
 
-String serialBuffer = "";
+unsigned long lastAlive = 0;
 
-// function to setup wifi connection
-void setup_wifi() {
-  Serial.println("\nWIFI: Hard resetting radio...");
-  
-  WiFi.persistent(false); 
-  WiFi.disconnect(true);
-  WiFi.mode(WIFI_OFF); 
-  delay(1000); // เพิ่มเวลาพักให้ชิปเคลียร์แรม 1 วิเต็มๆ
-  
-  WiFi.mode(WIFI_STA); 
-  
-  WiFi.setSleepMode(WIFI_NONE_SLEEP);
-  WiFi.setAutoReconnect(true);
-  delay(100);
+bool pendingTaken = false;
+String pendingPayload = "";
+unsigned long takenTimer = 0;
 
-  Serial.print("WIFI: connecting to ");
-  Serial.println(WIFI_SSID);
-  
+int alarmCount = 0;
+
+
+
+void callback(char* topic, byte* payload, unsigned int length) {
+
+  String msg = "";
+
+  for (int i = 0; i < length; i++)
+    msg += (char)payload[i];
+
+  String t = String(topic);
+
+  if (t == "medicine/set_alarm") {
+
+    Serial.print("CMD:ADD_MED:");
+    Serial.println(msg);
+  }
+
+  else if (t == "medicine/clear_alarm")
+    Serial.println("CMD:CLEAR_MED");
+
+  else if (t == "medicine/refill")
+    Serial.println("CMD:REFILL");
+
+  else if (t == "medicine/tare")
+    Serial.println("CMD:TARE");
+}
+
+
+
+void connectWiFi() {
+
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  lastForceWifi = millis(); // รีเซ็ตตัวจับเวลา
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+  }
+
+  Serial.println("CMD:WIFI:OK");
+
+  configTime(7 * 3600, 0, "pool.ntp.org", "time.nist.gov");
 }
 
-// function to reconnect to MQTT
-void reconnect() {
-  if (millis() - lastMqttAttempt >= mqttConnectionInterval) {
-    lastMqttAttempt = millis();
 
-    // ถ้าเน็ตหลุดระหว่างต่อ MQTT ให้เด้งออกไปรอเน็ตก่อน
-    if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("WIFI: connection lost during MQTT reconnect!");
-      return; 
+
+void reconnectMQTT() {
+
+  while (!client.connected()) {
+
+    if (client.connect("ESPBOX_WIN", BROKER_USER, BROKER_PASSWORD)) {
+
+      client.subscribe("medicine/#");
+
+      Serial.println("CMD:MQTT:OK");
     }
 
-    Serial.println("MQTT: attempting connection...");
+    else {
 
-    String clientId = "esp8266xbjr-";
-    clientId += String(random(0xffff), HEX);
+      Serial.println("CMD:MQTT:FAIL");
 
-    if (client.connect(clientId.c_str(), BROKER_USER, BROKER_PASSWORD)) {
-      Serial.println("MQTT: connected");
-    } else {
-      Serial.print("MQTT: failed, error=");
-      Serial.print(client.state());
-      Serial.println(", trying again in 5 seconds");
+      delay(2000);
     }
   }
 }
 
-// function to send something to arduino board via serial
-void sendToArduino(String cmd, String action, String value) {
-  Serial.println(cmd + ":" + action + ":" + value);
+
+
+String getTimeString() {
+
+  time_t now = time(nullptr);
+  struct tm* t = localtime(&now);
+
+  char buf[25];
+
+  sprintf(buf,
+          "%04d-%02d-%02d %02d:%02d:%02d",
+          t->tm_year + 1900,
+          t->tm_mon + 1,
+          t->tm_mday,
+          t->tm_hour,
+          t->tm_min,
+          t->tm_sec);
+
+  return String(buf);
 }
 
-// function to receive something from arduino board via serial
-void processIncomingSerial() {
-  while (Serial.available()) {
-    char inChar = (char)Serial.read();
 
-    if (inChar == '\n') { 
-      serialBuffer.trim();
 
-      if (serialBuffer.startsWith("RPLY:")) {
-        int actionSplit = serialBuffer.indexOf(':', 5);
+void sendAlive() {
 
-        if (actionSplit != -1) {
-          String action = serialBuffer.substring(5, actionSplit);
-          String value = serialBuffer.substring(actionSplit + 1);
+  String payload =
+    "{\"msg\":\"alive\",\"alarms\":" +
+    String(alarmCount) +
+    ",\"time\":\"" +
+    getTimeString() +
+    "\"}";
 
-          if (action == "MQTT_PUB") {
-            client.publish("medicine_box/send", value.c_str());
-          }
-        }
-      }
-      serialBuffer = "";
-    } else {
-      serialBuffer += inChar;
-    }
-  }
+  client.publish("medicine_box/status", payload.c_str());
 }
+
+
 
 void setup() {
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, HIGH);
 
   Serial.begin(115200);
-  
-  // *** THE TLS MEMORY FIX ***
-  espClient.setBufferSizes(1024, 1024); 
-  
-  setup_wifi();
-
-  Serial.println("TIME: syncing");
-  configTime(25200, 0, "pool.ntp.org", "time.nist.gov");
 
   espClient.setInsecure();
+
+  connectWiFi();
+
   client.setServer(BROKER_DOMAIN, BROKER_PORT);
+
+  client.setCallback(callback);
 }
 
+
+
 void loop() {
-  // 1. รับค่า Serial เสมอ ไม่ว่าจะมีเน็ตหรือไม่
-  processIncomingSerial();
 
-  // 2. เช็คสถานะ Wi-Fi พร้อมระบบ Force Reconnect แบบใจเย็นขึ้น
   if (WiFi.status() != WL_CONNECTED) {
-    unsigned long currentMillis = millis();
-    
-    // ไฟกระพริบสลับไปมาทุกๆ 1 วินาที (แก้บั๊กไฟค้างให้แล้ว)
-    if (currentMillis - lastWifiBlink >= 1000) { 
-      lastWifiBlink = currentMillis;
-      digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); 
-      
-      Serial.print("WIFI: waiting... Error Code: ");
-      Serial.println(WiFi.status()); 
-    }
 
-    // ขยายเวลารอเป็น 20 วินาทีเต็มๆ
-    if (currentMillis - lastForceWifi >= 60000) {
-      lastForceWifi = currentMillis;
-      Serial.println("WIFI: Timeout (1m)! Hard reconnecting...");
-      
-      // ดึงปลั๊กออกแล้วเสียบใหม่ (ดิบแต่ชัวร์กว่า)
-      WiFi.disconnect();
-      delay(100);
-      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    }
+    Serial.println("CMD:WIFI:LOST");
 
-    return; // ออกจาก loop ไปรอรอบหน้า
+    connectWiFi();
   }
 
-  // เคลียร์ค่าตัวจับเวลาเมื่อต่อติดแล้ว ป้องกันการโดนเตะมั่วซั่วในอนาคต
-  lastForceWifi = millis();
-  
-  // ปิดไฟเมื่อต่อเน็ตติด (สถานะปกติ)
-  digitalWrite(LED_BUILTIN, HIGH); 
+  if (!client.connected())
+    reconnectMQTT();
 
-  // 3. เช็คสถานะ MQTT
-  if (!client.connected()) {
-    reconnect();
-  } else {
-    client.loop();
+  client.loop();
+
+
+
+  if (millis() - lastAlive > 15000) {
+
+    sendAlive();
+
+    lastAlive = millis();
   }
 
-  // 4. ส่ง Ping status
-  unsigned long currentMillis = millis();
-  if (client.connected() && (currentMillis - lastPing >= pingInterval)) {
-    lastPing = currentMillis;
 
-    time_t now = time(nullptr);
-    struct tm* timeinfo = localtime(&now);
 
-    String payload = "{\"msg\": \"I'm alive\"";
+  if (pendingTaken) {
 
-    if (timeinfo->tm_year > 70) {
-      char timeString[25];
-      strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S", timeinfo);
-      payload += ", \"time\": \"";
-      payload += timeString;
-      payload += "\"";
-    } else {
-      payload += ", \"time\": \"still syncing to ntp\"";
+    if (millis() - takenTimer > 60000) {
+
+      client.publish("medicine_box/taken",
+                     pendingPayload.c_str());
+
+      pendingTaken = false;
+    }
+  }
+
+
+
+  while (Serial.available()) {
+
+    char c = Serial.read();
+
+    if (c == '\n') {
+
+      serialBuf.trim();
+
+
+
+      if (serialBuf.startsWith("PUB:")) {
+
+        String payload = serialBuf.substring(4);
+
+
+
+        if (payload.indexOf("\"weight\"") >= 0) {
+
+          pendingTaken = true;
+          pendingPayload = payload;
+          takenTimer = millis();
+        }
+
+        else {
+
+          client.publish("medicine_box/status",
+                         payload.c_str());
+        }
+      }
+
+
+
+      else if (serialBuf.startsWith("ALARM_COUNT:")) {
+
+        alarmCount =
+          serialBuf.substring(12).toInt();
+      }
+
+
+
+      serialBuf = "";
     }
 
-    payload += "}";
+    else {
 
-    Serial.print("MQTT: sending ");
-    Serial.println(payload);
-    client.publish(TOPIC_STATUS, payload.c_str());
+      if (serialBuf.length() < 200)
+        serialBuf += c;
+    }
   }
 }

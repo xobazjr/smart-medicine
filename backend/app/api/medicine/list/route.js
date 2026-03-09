@@ -79,7 +79,7 @@ export async function GET(req) {
             // 3. Fetch all drugs for this user
             // Note: Make sure your SELECT statement includes the columns you need for the flags (e.g., morning, noon, etc.)
             let drugs = await sql`
-                SELECT d.drug_name, d.drug_id, d.warning, d.timing, d.take_morning, d.take_noon, d.take_evening, d.take_bedtime 
+                SELECT * 
                 FROM drugs d 
                 JOIN users u ON u.user_id = d.user_id 
                 WHERE u.user_id = ${userId}

@@ -300,7 +300,7 @@ void loop(){
 
     if(millis()-lastBeep>=1000){
 
-      tone(PIN_BUZZER,1200,200);
+      tone(PIN_BUZZER,400,200);
       lastBeep=millis();
     }
 

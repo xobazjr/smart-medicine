@@ -64,12 +64,12 @@ export async function POST(req) {
                         console.log("Sending:", payload);
 
                         client.publish('medicine/set_alarm', payload);
-
-                        // small buffer flush delay
-                        await new Promise(r => setTimeout(r, 300));
-
-                        // MAIN delay so Arduino can process
-                        await new Promise(r => setTimeout(r, 3000));
+                        //
+                        // // small buffer flush delay
+                        // await new Promise(r => setTimeout(r, 300));
+                        //
+                        // // MAIN delay so Arduino can process
+                        // await new Promise(r => setTimeout(r, 3000));
                     }
                 }
 

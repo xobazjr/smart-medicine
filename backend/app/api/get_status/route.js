@@ -35,11 +35,11 @@ export async function GET(req) {
         // Using raw divisions as requested (no "just now")
         if (diffInSeconds < 60) {
             lastSeen = `${diffInSeconds} second${diffInSeconds !== 1 ? 's' : ''} ago`;
-            isOnline = diffInSeconds <= 15;
+            isOnline = diffInSeconds < 60;
         } else if (diffInSeconds < 3600) {
             const mins = Math.floor(diffInSeconds / 60);
             lastSeen = `${mins} minute${mins > 1 ? 's' : ''} ago`;
-            isOnline = false;
+            isOnline = diffInSeconds < 90;
         } else if (diffInSeconds < 86400) {
             const hrs = Math.floor(diffInSeconds / 3600);
             lastSeen = `${hrs} hour${hrs > 1 ? 's' : ''} ago`;

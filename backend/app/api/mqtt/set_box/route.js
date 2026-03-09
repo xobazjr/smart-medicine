@@ -14,6 +14,7 @@ export async function POST(req) {
         }
 
         const token = authHeader.split(' ')[1];
+
         try {
             jwt.verify(token, process.env.JWT_SECRET || 'default_secret_key');
         } catch (err) {
@@ -23,25 +24,54 @@ export async function POST(req) {
             );
         }
 
+        // =========================
+        // CHECK BOARD STATUS FIRST
+        // =========================
+        const statusRes = await fetch(`${process.env.BASE_URL || 'http://localhost:3000'}/api/get_status`);
+        const status = await statusRes.json();
+
+        if (!status.is_online) {
+            return NextResponse.json(
+                { error: "Can't connect to board (offline)" },
+                { status: 500 }
+            );
+        }
+
+        const lastSeenTime = new Date(status.timestamp);
+        const now = new Date();
+
+        const diffSeconds = (now - lastSeenTime) / 1000;
+
+        if (diffSeconds > 60) {
+            return NextResponse.json(
+                { error: "Can't connect to board (last seen > 1 minute)" },
+                { status: 500 }
+            );
+        }
+
+        // =========================
+        // NORMAL ALARM SYNC
+        // =========================
         const body = await req.json();
         const { alarms } = body;
 
         await new Promise((resolve) => {
 
-            const client = mqtt.connect('mqtts://l2901b8a.ala.asia-southeast1.emqxsl.com:8883', {
-                username: 'mqtt_to_nextjs',
-                password: 'mqtt_to_nextjs',
-                clientId: `nextjs_${Math.random().toString(16).slice(3)}`
-            });
+            const client = mqtt.connect(
+                'mqtts://l2901b8a.ala.asia-southeast1.emqxsl.com:8883',
+                {
+                    username: 'mqtt_to_nextjs',
+                    password: 'mqtt_to_nextjs',
+                    clientId: `nextjs_${Math.random().toString(16).slice(3)}`
+                }
+            );
 
             client.on('connect', async () => {
 
                 console.log("MQTT Connected! Sending alarms slowly...");
 
-                // CLEAR OLD ALARMS
                 client.publish('medicine/clear_alarm', 'clear');
 
-                // wait longer so EEPROM wipe completes
                 await new Promise(r => setTimeout(r, 3000));
 
                 if (alarms && Array.isArray(alarms)) {
@@ -64,12 +94,9 @@ export async function POST(req) {
                         console.log("Sending:", payload);
 
                         client.publish('medicine/set_alarm', payload);
-                        //
-                        // // small buffer flush delay
-                        // await new Promise(r => setTimeout(r, 300));
-                        //
-                        // // MAIN delay so Arduino can process
-                        // await new Promise(r => setTimeout(r, 3000));
+
+                        // delay so Arduino can process
+                        await new Promise(r => setTimeout(r, 3000));
                     }
                 }
 

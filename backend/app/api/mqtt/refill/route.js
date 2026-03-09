@@ -4,7 +4,8 @@ import mqtt from 'mqtt';
 
 export async function POST(req) {
     try {
-        // 1. Verify the token to ensure the user is authorized
+
+        // 1. Verify token
         const authHeader = req.headers.get('authorization');
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             return NextResponse.json(
@@ -14,6 +15,7 @@ export async function POST(req) {
         }
 
         const token = authHeader.split(' ')[1];
+
         try {
             jwt.verify(token, process.env.JWT_SECRET || 'default_secret_key');
         } catch (err) {
@@ -23,31 +25,57 @@ export async function POST(req) {
             );
         }
 
-        // 2. Connect to MQTT and send Refill & Tare commands
-        await new Promise((resolve, reject) => {
-            const client = mqtt.connect('mqtts://l2901b8a.ala.asia-southeast1.emqxsl.com:8883', {
-                username: 'mqtt_to_nextjs',
-                password: 'mqtt_to_nextjs',
-                clientId: `nextjs_refill_${Math.random().toString(16).slice(3)}`
-            });
+        // =========================
+        // CHECK BOARD STATUS
+        // =========================
+        const statusRes = await fetch(`${process.env.BASE_URL || 'http://localhost:3000'}/api/get_status`);
+        const status = await statusRes.json();
 
-            // Added async here so we can use await for the delay
+        if (!status.is_online) {
+            return NextResponse.json(
+                { error: "Can't connect to board (offline)" },
+                { status: 500 }
+            );
+        }
+
+        const lastSeen = new Date(status.timestamp);
+        const now = new Date();
+        const diffSeconds = (now - lastSeen) / 1000;
+
+        if (diffSeconds > 60) {
+            return NextResponse.json(
+                { error: "Can't connect to board (last seen > 1 minute)" },
+                { status: 500 }
+            );
+        }
+
+        // =========================
+        // SEND MQTT REFILL COMMAND
+        // =========================
+        await new Promise((resolve) => {
+
+            const client = mqtt.connect(
+                'mqtts://l2901b8a.ala.asia-southeast1.emqxsl.com:8883',
+                {
+                    username: 'mqtt_to_nextjs',
+                    password: 'mqtt_to_nextjs',
+                    clientId: `nextjs_refill_${Math.random().toString(16).slice(3)}`
+                }
+            );
+
             client.on('connect', async () => {
+
                 console.log("MQTT Connected for Refill!");
 
-                // Step A: Send the refill command to open the servo
+                // Step A: open refill box
                 client.publish('medicine/refill', 'open_box');
 
-                // Wait 2 seconds before sending the Tare command.
-                // This prevents the ESP8266 Serial buffer from overflowing.
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                // wait before tare
+                await new Promise(r => setTimeout(r, 2000));
 
-                // Step B: Send the tare command.
-                // The Arduino will hold this in its buffer and execute it EXACTLY
-                // when its mechanical refill delay finishes!
+                // Step B: tare scale
                 client.publish('medicine/tare', 'reset_scale');
 
-                // Close connection safely
                 client.end();
                 resolve(true);
             });
@@ -57,6 +85,7 @@ export async function POST(req) {
                 client.end();
                 resolve(false);
             });
+
         });
 
         return NextResponse.json(
@@ -64,12 +93,14 @@ export async function POST(req) {
             { status: 200 }
         );
 
-    }
-    catch (e) {
+    } catch (e) {
+
         console.error(e);
+
         return NextResponse.json(
-            { error: e.message, status: 500 },
+            { error: e.message },
             { status: 500 }
         );
+
     }
 }

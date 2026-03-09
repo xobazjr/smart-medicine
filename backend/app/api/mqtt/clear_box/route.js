@@ -4,7 +4,8 @@ import mqtt from 'mqtt';
 
 export async function POST(req) {
     try {
-        // 1. Verify the token to ensure the request is authorized
+
+        // 1. Verify token
         const authHeader = req.headers.get('authorization');
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             return NextResponse.json(
@@ -14,6 +15,7 @@ export async function POST(req) {
         }
 
         const token = authHeader.split(' ')[1];
+
         try {
             jwt.verify(token, process.env.JWT_SECRET || 'default_secret_key');
         } catch (err) {
@@ -23,21 +25,50 @@ export async function POST(req) {
             );
         }
 
-        // 2. Connect to MQTT and send the clear command
-        await new Promise((resolve, reject) => {
-            const client = mqtt.connect('mqtts://l2901b8a.ala.asia-southeast1.emqxsl.com:8883', {
-                username: 'mqtt_to_nextjs',
-                password: 'mqtt_to_nextjs',
-                clientId: `nextjs_clear_${Math.random().toString(16).slice(3)}`
-            });
+        // =========================
+        // CHECK BOARD STATUS
+        // =========================
+        const statusRes = await fetch(`${process.env.BASE_URL || 'http://localhost:3000'}/api/get_status`);
+        const status = await statusRes.json();
+
+        if (!status.is_online) {
+            return NextResponse.json(
+                { error: "Can't connect to board (offline)" },
+                { status: 500 }
+            );
+        }
+
+        const lastSeen = new Date(status.timestamp);
+        const now = new Date();
+        const diffSeconds = (now - lastSeen) / 1000;
+
+        if (diffSeconds > 60) {
+            return NextResponse.json(
+                { error: "Can't connect to board (last seen > 1 minute)" },
+                { status: 500 }
+            );
+        }
+
+        // =========================
+        // SEND CLEAR COMMAND
+        // =========================
+        await new Promise((resolve) => {
+
+            const client = mqtt.connect(
+                'mqtts://l2901b8a.ala.asia-southeast1.emqxsl.com:8883',
+                {
+                    username: 'mqtt_to_nextjs',
+                    password: 'mqtt_to_nextjs',
+                    clientId: `nextjs_clear_${Math.random().toString(16).slice(3)}`
+                }
+            );
 
             client.on('connect', () => {
+
                 console.log("MQTT Connected! Wiping alarms...");
 
-                // Shoot the clear command to the ESP8266
                 client.publish('medicine/clear_alarm', 'clear');
 
-                // Wait 500ms to ensure the message successfully leaves the server
                 setTimeout(() => {
                     client.end();
                     resolve(true);
@@ -49,6 +80,7 @@ export async function POST(req) {
                 client.end();
                 resolve(false);
             });
+
         });
 
         return NextResponse.json(
@@ -56,12 +88,14 @@ export async function POST(req) {
             { status: 200 }
         );
 
-    }
-    catch (e) {
+    } catch (e) {
+
         console.error(e);
+
         return NextResponse.json(
-            { error: e.message, status: 500 },
+            { error: e.message },
             { status: 500 }
         );
+
     }
 }

@@ -284,7 +284,10 @@ class _AddDrugPageState extends State<AddDrugPage> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _timing == "before"
                           ? Colors.deepPurple
-                          : Colors.grey,
+                          : Colors.grey.shade300,
+                      foregroundColor: _timing == "before"
+                          ? Colors.white
+                          : Colors.black,
                     ),
                     onPressed: () {
                       setState(() {
@@ -300,7 +303,10 @@ class _AddDrugPageState extends State<AddDrugPage> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _timing == "after"
                           ? Colors.deepPurple
-                          : Colors.grey,
+                          : Colors.grey.shade300,
+                      foregroundColor: _timing == "after"
+                          ? Colors.white
+                          : Colors.black,
                     ),
                     onPressed: () {
                       setState(() {

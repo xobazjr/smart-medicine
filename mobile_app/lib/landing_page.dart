@@ -49,11 +49,11 @@ class _NavigationState extends State<Navigation> {
             icon: Icon(Icons.medication_outlined),
             label: 'ยา',
           ),
-          NavigationDestination(
-            selectedIcon: Icon(Icons.query_stats_sharp, color: Colors.white),
-            icon: Icon(Icons.query_stats_outlined),
-            label: 'ประวัติ',
-          ),
+          // NavigationDestination(
+          //   selectedIcon: Icon(Icons.query_stats_sharp, color: Colors.white),
+          //   icon: Icon(Icons.query_stats_outlined),
+          //   label: 'ประวัติ',
+          // ),
           NavigationDestination(
             selectedIcon: Icon(Icons.settings, color: Colors.white),
             icon: Icon(Icons.settings_outlined),
@@ -64,7 +64,7 @@ class _NavigationState extends State<Navigation> {
       body: [
         HomePage(user: widget.user),
         DrugsPage(user: widget.user),
-        HistoryPage(user: widget.user),
+        // HistoryPage(user: widget.user),
         SettingsPage(user: widget.user),
       ][_selectedIndex],
     );
